@@ -19,7 +19,7 @@ ENV PYTHONUNBUFFERED=1
 
 # Copy dependency files and install via uv
 COPY pyproject.toml README.md ./
-RUN uv pip install --system -e .
+RUN uv pip install --system -r pyproject.toml
 
 # Copy application code
 COPY src/ ./src/
