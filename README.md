@@ -1,6 +1,6 @@
 # Multi-Agent RAG System with LangGraph, Google AI Studio, pgvector & Angular
 
-An end-to-end, enterprise-grade **Retrieval-Augmented Generation (RAG)** system featuring a **multi-container microservice architecture**, where every agent runs in an isolated Docker container coordinated through a central **LangGraph Orchestrator**. The system ingests PDF and text documents, computes embeddings using **Google AI Studio (`text-embedding-004`)**, stores them in **PostgreSQL with `pgvector`**, and performs **Hybrid Search (Dense Cosine Similarity + Sparse Full-Text Search with Reciprocal Rank Fusion / RRF)** returning verifiable citations.
+An end-to-end, enterprise-grade **Retrieval-Augmented Generation (RAG)** system featuring a **multi-container microservice architecture**, where every agent runs in an isolated Docker container coordinated through a central **LangGraph Orchestrator**. The system ingests PDF and text documents, computes embeddings using **Google AI Studio (`gemini-embedding-2` with 768-dim Matryoshka Representation Learning)**, stores them in **PostgreSQL with `pgvector`**, and performs **Hybrid Search (Dense Cosine Similarity + Sparse Full-Text Search with Reciprocal Rank Fusion / RRF)** returning verifiable citations and interactive source previews.
 
 All Python services use **Astral's `uv`** for ultra-fast dependency management, and the frontend is built with **Angular (v18)** and containerized with multi-stage Nginx.
 
@@ -28,8 +28,8 @@ flowchart TD
     end
 
     subgraph External ["Google AI Studio"]
-        GEMINI["Gemini 1.5 Flash / 2.0\n(Grounded Reasoning)"]
-        EMBED["text-embedding-004\n(768-dim Vectors)"]
+        GEMINI["Gemini 3.8 Flash / 1.5 Flash\n(Grounded Reasoning)"]
+        EMBED["gemini-embedding-2\n(768-dim MRL Vectors)"]
     end
 
     UI -->|"HTTP / REST (/api/*)"| ORCH
@@ -51,22 +51,26 @@ flowchart TD
 1. **Strict Multi-Container Isolation**:
    - **Postgres (pgvector)**: Vector database with HNSW indexing and GIN full-text search.
    - **Retrieval Agent**: Dedicated microservice for embedding calculation and hybrid search fusion.
-   - **Synthesis Agent**: Dedicated microservice for grounded answer reasoning and citation verification via Gemini.
+   - **Synthesis Agent**: Dedicated microservice for grounded answer reasoning, multi-part response normalization, and citation verification via Gemini.
    - **Orchestrator Gateway**: Central router coordinating requests, state propagation, and document ingestion via **LangGraph**.
-   - **Angular Frontend**: Modern reactive SPA with microservices health monitoring, document manager, and evidence drawer.
+   - **Angular Frontend**: Modern reactive SPA with microservices health monitoring, document manager, evidence drawer, and interactive citation preview modal.
 
 2. **Ultra-Fast Python Packaging with Astral `uv`**:
-   - Each Python service uses `uv` with `pyproject.toml` configuration for fast, deterministic builds inside Docker.
+   - Each Python microservice uses `uv` with `pyproject.toml` configuration for fast, deterministic builds inside Docker.
 
 3. **Hybrid Search with Reciprocal Rank Fusion (RRF)**:
    - Combines semantic **Dense Vector Search** ($\cos$ distance on `vector(768)`) with lexical **Sparse Full-Text Search** (`to_tsvector` and `ts_rank_cd`).
+   - Uses Matryoshka Representation Learning (MRL) with `output_dimensionality: 768` for native compatibility with pgvector's HNSW index limit.
    - Merges candidate lists using Reciprocal Rank Fusion:
      $$RRF(d) = \frac{w_{\text{dense}}}{k + \text{rank}_{\text{dense}}(d)} + \frac{w_{\text{sparse}}}{k + \text{rank}_{\text{sparse}}(d)}$$
      *(where $k=60$ by default, with configurable weights).*
 
-4. **Grounded Citations & Evidence Viewer**:
-   - Citations format `[^n]` directly linked to original source documents, page numbers, chunk identifiers, and similarity metrics.
-   - Clickable citation badges in the Angular UI open the exact excerpt in the Evidence drawer.
+4. **Interactive Citation View & Source Preview Modal**:
+   - **One-Click Source Preview**: Clicking any citation marker (`[^1]`), message source pill, or drawer card opens an interactive source modal.
+   - **Cited Excerpt Tab**: Displays the exact passage used by the agent, word count, grounding verification, and one-click clipboard copy.
+   - **Document Context Tab**: Loads surrounding chunks from the database so users can read the cited passage in full context without leaving the chat.
+   - **Vector & Trace Info Tab**: Visualizes cosine similarity, sparse FTS scores, RRF ranks, and raw citation coordinates.
+   - **Keyboard Navigation**: Jump between citations with `←` / `→` arrow keys and close with `ESC`.
 
 5. **Stateful Multi-Agent Orchestration with LangGraph**:
    - Built with LangGraph `StateGraph`, providing a transparent execution trace:
@@ -91,11 +95,11 @@ flowchart TD
 │   │   ├── pyproject.toml          # uv package configuration
 │   │   └── src/
 │   │       ├── main.py             # FastAPI entrypoint
-│   │       ├── config.py           # Environment settings
+│   │       ├── config.py           # Environment settings (EMBEDDING_DIMENSION=768)
 │   │       ├── db.py               # Database connection pool
 │   │       ├── graph.py            # LangGraph StateGraph workflow
 │   │       ├── state.py            # LangGraph state schema
-│   │       ├── document_processor.py # PDF/TXT parsing & chunking
+│   │       ├── document_processor.py # PDF/TXT parsing, chunking & 768-dim embeddings
 │   │       ├── clients/            # HTTP clients for agent containers
 │   │       └── routes/             # API routes (/api/chat, /api/documents, /api/system)
 │   ├── retrieval-agent/            # Hybrid Search Agent container (Port 8001)
@@ -105,7 +109,7 @@ flowchart TD
 │   │       ├── main.py             # FastAPI entrypoint
 │   │       ├── config.py           # Settings
 │   │       ├── db.py               # Asyncpg database pool
-│   │       ├── embeddings.py       # Google AI Studio text-embedding-004
+│   │       ├── embeddings.py       # Google AI Studio gemini-embedding-2 (768-dim MRL)
 │   │       └── hybrid_search.py    # Dense + Sparse RRF algorithm
 │   └── synthesis-agent/            # Grounded Synthesis Agent container (Port 8002)
 │       ├── Dockerfile              # Docker build using Astral uv
@@ -114,7 +118,7 @@ flowchart TD
 │           ├── main.py             # FastAPI entrypoint
 │           ├── config.py           # Settings
 │           ├── llm.py              # Google AI Studio Gemini LLM client
-│           └── synthesizer.py      # Grounded prompting & citation extraction
+│           └── synthesizer.py      # Grounded prompting, content normalization & citations
 └── frontend/                       # Angular 18 Web UI (Port 4200 / 80)
     ├── Dockerfile                  # Multi-stage build (Node -> Nginx)
     ├── nginx.conf                  # Static file server & API reverse proxy
@@ -123,15 +127,16 @@ flowchart TD
     ├── tsconfig.json               # TypeScript config
     └── src/
         ├── index.html
-        ├── styles.css              # Modern dark theme styles
+        ├── styles.css              # Modern dark theme styles & glowing citation badges
         └── app/
-            ├── app.component.ts    # Main view with Chat, Documents, Tuning
+            ├── app.component.ts    # Main view with Chat, Documents, Tuning & Modal controls
             ├── models/rag.models.ts
             ├── services/rag.service.ts
             └── components/
                 ├── header/         # Live microservice health pills
                 ├── document-upload/# Drag & drop, list, and sample button
                 ├── citations-panel/# Evidence excerpt & score viewer
+                ├── citation-preview-modal/ # Interactive source preview & context modal
                 └── workflow-trace/ # LangGraph pipeline visualizer
 ```
 
@@ -147,13 +152,16 @@ cp .env.example .env
 Edit `.env`:
 ```env
 GOOGLE_API_KEY=your_gemini_api_key_here
+EMBEDDING_MODEL=gemini-embedding-2
+EMBEDDING_DIMENSION=768
+GEMINI_MODEL=gemini-3.8-flash
 ```
 *(You can obtain a free Gemini API key at [aistudio.google.com](https://aistudio.google.com/)).*
 
 ### 2. Build and Launch Containers
 Run Docker Compose to build and start all 5 containers:
 ```bash
-docker compose up --build
+docker compose up -d --build
 ```
 
 ### 3. Access the System
@@ -180,7 +188,13 @@ docker compose up --build
    - Node 3: Context Relevance Verification
    - Node 4: Synthesis Agent (Google AI Studio Gemini reasoning)
    - Node 5: Citation Target Verification
-6. Click any citation badge (e.g. `[^1]`) in the synthesized response to view the exact **document page, excerpt, and hybrid score breakdown** in the Evidence Drawer!
+6. **Inspect Citations and Preview Sources**:
+   - Click any inline citation badge `[^1]` or source pill under the message.
+   - An interactive **Citation View Modal** will open showing:
+     - The **exact cited excerpt** highlighted.
+     - The **Document Context** tab with all surrounding document chunks.
+     - The **Vector & Trace Info** tab showing pgvector cosine similarity and RRF fusion metrics.
+     - Keyboard shortcuts: Navigate with `←` / `→` arrow keys, close with `ESC`.
 
 ---
 
@@ -198,6 +212,7 @@ docker compose up --build
   ```
 - `POST /api/documents/upload`: Multipart file upload for PDF, TXT, or MD documents.
 - `GET /api/documents`: List all ingested documents and their chunk counts.
+- `GET /api/documents/{id}`: Retrieve document details and all stored text chunks for source preview and inspection.
 - `DELETE /api/documents/{id}`: Delete document and its vector chunks.
 - `POST /api/documents/sample`: Seed sample knowledge document.
 - `GET /api/system/status`: Comprehensive health check of all microservices.
