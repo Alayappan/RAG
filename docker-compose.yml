@@ -1,0 +1,121 @@
+services:
+  # 1. PostgreSQL Vector Database (pgvector)
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: rag-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ragdb}
+      POSTGRES_USER: ${POSTGRES_USER:-raguser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ragpassword}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-raguser} -d ${POSTGRES_DB:-ragdb}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - rag-network
+
+  # 2. Retrieval Agent Container (Microservice)
+  # Uses Google AI Studio text-embedding-004 and executes Hybrid Search (Dense + Sparse RRF)
+  retrieval-agent:
+    build:
+      context: ./services/retrieval-agent
+      dockerfile: Dockerfile
+    container_name: rag-retrieval-agent
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-raguser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ragpassword}
+      POSTGRES_DB: ${POSTGRES_DB:-ragdb}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-models/text-embedding-004}
+      DEFAULT_TOP_K: ${DEFAULT_TOP_K:-5}
+      DEFAULT_DENSE_WEIGHT: ${DEFAULT_DENSE_WEIGHT:-0.6}
+      DEFAULT_SPARSE_WEIGHT: ${DEFAULT_SPARSE_WEIGHT:-0.4}
+      RRF_K: ${RRF_K:-60}
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - rag-network
+
+  # 3. Synthesis Agent Container (Microservice)
+  # Uses Google AI Studio Gemini models for grounded answer synthesis & citation verification
+  synthesis-agent:
+    build:
+      context: ./services/synthesis-agent
+      dockerfile: Dockerfile
+    container_name: rag-synthesis-agent
+    restart: unless-stopped
+    environment:
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-1.5-flash}
+      TEMPERATURE: 0.2
+      MAX_OUTPUT_TOKENS: 2048
+    ports:
+      - "8002:8002"
+    networks:
+      - rag-network
+
+  # 4. Central Orchestrator Gateway (FastAPI + LangGraph)
+  # Mediates all requests, coordinates agents via LangGraph, handles document ingestion
+  orchestrator:
+    build:
+      context: ./services/orchestrator
+      dockerfile: Dockerfile
+    container_name: rag-orchestrator
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-raguser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ragpassword}
+      POSTGRES_DB: ${POSTGRES_DB:-ragdb}
+      RETRIEVAL_AGENT_URL: http://retrieval-agent:8001
+      SYNTHESIS_AGENT_URL: http://synthesis-agent:8002
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-models/text-embedding-004}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-1.5-flash}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      retrieval-agent:
+        condition: service_started
+      synthesis-agent:
+        condition: service_started
+    networks:
+      - rag-network
+
+  # 5. Angular Frontend (Multi-stage build served by Nginx)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: rag-frontend
+    restart: unless-stopped
+    ports:
+      - "4200:80"
+    depends_on:
+      - orchestrator
+    networks:
+      - rag-network
+
+volumes:
+  pgdata:
+    driver: local
+
+networks:
+  rag-network:
+    driver: bridge
