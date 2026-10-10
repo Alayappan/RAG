@@ -29,6 +29,10 @@ export class RagService {
     );
   }
 
+  getDocument(docId: string): Observable<any> {
+    return this.http.get<any>(`${this.apiUrl}/documents/${docId}`);
+  }
+
   uploadDocument(file: File): Observable<any> {
     const formData = new FormData();
     formData.append('file', file);

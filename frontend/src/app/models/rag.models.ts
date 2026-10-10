@@ -8,6 +8,17 @@ export interface DocumentItem {
   created_at: string;
 }
 
+export interface DocumentChunk {
+  id: string;
+  chunk_index: number;
+  page_number: number;
+  content: string;
+}
+
+export interface DocumentDetail extends DocumentItem {
+  chunks: DocumentChunk[];
+}
+
 export interface CitationItem {
   citation_id: number;
   document_id: string;

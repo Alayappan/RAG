@@ -7,6 +7,7 @@ import { HeaderComponent } from './components/header/header.component';
 import { DocumentUploadComponent } from './components/document-upload/document-upload.component';
 import { CitationsPanelComponent } from './components/citations-panel/citations-panel.component';
 import { WorkflowTraceComponent } from './components/workflow-trace/workflow-trace.component';
+import { CitationPreviewModalComponent } from './components/citation-preview-modal/citation-preview-modal.component';
 
 @Component({
   selector: 'app-root',
@@ -17,7 +18,8 @@ import { WorkflowTraceComponent } from './components/workflow-trace/workflow-tra
     HeaderComponent,
     DocumentUploadComponent,
     CitationsPanelComponent,
-    WorkflowTraceComponent
+    WorkflowTraceComponent,
+    CitationPreviewModalComponent
   ],
   template: `
     <div class="min-h-screen flex flex-col bg-slate-950 text-slate-100">
@@ -152,15 +154,27 @@ import { WorkflowTraceComponent } from './components/workflow-trace/workflow-tra
                 <div class="max-w-[90%] space-y-2">
                   <div class="bg-slate-950 border border-slate-800 rounded-2xl rounded-tl-sm px-4 py-3.5 text-sm text-slate-200 leading-relaxed shadow-sm">
                     <!-- Formatted text with parsed citations -->
-                    <div [innerHTML]="renderAnswer(msg.text)" (click)="handleCitationClick($event)"></div>
+                    <div [innerHTML]="renderAnswer(msg.text)" (click)="handleCitationClick($event, msg.citations)"></div>
                   </div>
 
                   <!-- Inline Quick Source Pills -->
                   <div *ngIf="msg.citations && msg.citations.length > 0" class="flex flex-wrap items-center gap-1.5 pt-1">
-                    <span class="text-[11px] text-slate-500 font-medium mr-1">Citations:</span>
-                    <button *ngFor="let c of msg.citations" (click)="selectCitation(c.citation_id)"
-                            class="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-[11px] text-blue-400 border border-slate-700 transition-colors">
-                      [{{ c.citation_id }}] {{ c.document_name }} (p.{{ c.page_number }})
+                    <span class="text-[11px] text-slate-500 font-medium mr-1 flex items-center gap-1">
+                      <svg class="w-3.5 h-3.5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      Sources:
+                    </span>
+                    <button *ngFor="let c of msg.citations" (click)="openCitationModal(c, msg.citations)"
+                            title="Click to preview source [{{ c.citation_id }}]"
+                            class="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-[11px] text-blue-400 hover:text-white border border-slate-700 hover:border-blue-500/50 transition-all flex items-center gap-1 shadow-sm">
+                      <span class="font-bold">[{{ c.citation_id }}]</span>
+                      <span class="truncate max-w-[130px]">{{ c.document_name }}</span>
+                      <span class="text-slate-400 font-mono text-[10px]">p.{{ c.page_number }}</span>
+                      <svg class="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
                     </button>
                   </div>
                 </div>
@@ -212,12 +226,23 @@ import { WorkflowTraceComponent } from './components/workflow-trace/workflow-tra
           <div class="flex-1 min-h-0">
             <app-citations-panel 
               [citations]="latestCitations"
-              [activeCitationId]="activeCitationId">
+              [activeCitationId]="activeCitationId"
+              (previewCitation)="openCitationModal($event, latestCitations)">
             </app-citations-panel>
           </div>
         </section>
 
       </main>
+
+      <!-- Interactive Citation Source Preview Modal -->
+      <app-citation-preview-modal
+        [isOpen]="isCitationModalOpen"
+        [citation]="selectedCitation"
+        [allCitations]="activeMessageCitations.length > 0 ? activeMessageCitations : latestCitations"
+        (closeModal)="closeCitationModal()"
+        (navigateCitation)="onNavigateCitation($event)"
+        (askQuestionOnSource)="onAskQuestionOnSource($event)">
+      </app-citation-preview-modal>
     </div>
   `
 })
@@ -238,6 +263,11 @@ export class AppComponent implements OnInit {
   latestCitations: CitationItem[] = [];
   latestSteps: AgentStep[] = [];
   activeCitationId: number | null = null;
+
+  // Citation Modal & Source Preview State
+  isCitationModalOpen = false;
+  selectedCitation: CitationItem | null = null;
+  activeMessageCitations: CitationItem[] = [];
 
   samplePrompts = [
     'What is a Knowledge Graph?',
@@ -371,9 +401,9 @@ export class AppComponent implements OnInit {
 
   renderAnswer(text: string): string {
     if (!text) return '';
-    // Format citations [^1] or [^2] into clickable badges
+    // Format citations [^1] or [^2] into clickable badges with preview icon
     let formatted = text.replace(/\[\^(\d+)\]/g, (match, id) => {
-      return `<button class="citation-badge" data-citation-id="${id}">[${id}]</button>`;
+      return `<button class="citation-badge" data-citation-id="${id}" title="Click to preview source [${id}]"><span>[${id}]</span><svg class="citation-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg></button>`;
     });
 
     // Simple markdown format for bold and linebreaks
@@ -385,12 +415,19 @@ export class AppComponent implements OnInit {
     return formatted;
   }
 
-  handleCitationClick(event: MouseEvent) {
-    const target = event.target as HTMLElement;
-    if (target && target.classList.contains('citation-badge')) {
-      const citId = target.getAttribute('data-citation-id');
-      if (citId) {
-        this.selectCitation(parseInt(citId, 10));
+  handleCitationClick(event: MouseEvent, msgCitations?: CitationItem[]) {
+    const target = (event.target as HTMLElement).closest('.citation-badge') as HTMLElement;
+    if (target) {
+      const citIdStr = target.getAttribute('data-citation-id');
+      if (citIdStr) {
+        const citId = parseInt(citIdStr, 10);
+        const pool = msgCitations && msgCitations.length > 0 ? msgCitations : this.latestCitations;
+        const found = pool.find(c => c.citation_id === citId);
+        if (found) {
+          this.openCitationModal(found, pool);
+        } else {
+          this.selectCitation(citId);
+        }
       }
     }
   }
@@ -403,5 +440,36 @@ export class AppComponent implements OnInit {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     }, 50);
+
+    const found = this.latestCitations.find(c => c.citation_id === citId);
+    if (found) {
+      this.openCitationModal(found, this.latestCitations);
+    }
+  }
+
+  openCitationModal(cit: CitationItem, contextCitations?: CitationItem[]) {
+    this.selectedCitation = cit;
+    this.activeCitationId = cit.citation_id;
+    this.activeMessageCitations = contextCitations && contextCitations.length > 0 ? contextCitations : this.latestCitations;
+    this.isCitationModalOpen = true;
+  }
+
+  closeCitationModal() {
+    this.isCitationModalOpen = false;
+    this.selectedCitation = null;
+  }
+
+  onNavigateCitation(citId: number) {
+    const pool = this.activeMessageCitations.length > 0 ? this.activeMessageCitations : this.latestCitations;
+    const next = pool.find(c => c.citation_id === citId);
+    if (next) {
+      this.selectedCitation = next;
+      this.activeCitationId = next.citation_id;
+    }
+  }
+
+  onAskQuestionOnSource(prompt: string) {
+    this.queryInput = prompt;
+    this.sendQuery();
   }
 }

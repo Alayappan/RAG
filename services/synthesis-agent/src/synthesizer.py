@@ -31,11 +31,45 @@ def format_sources_for_prompt(chunks: List[Dict[str, Any]]) -> str:
         formatted.append(f"--- [Source {idx}] Document: {doc} | Page: {page} ---\n{content}\n")
     return "\n".join(formatted)
 
-def extract_citations(answer: str, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def normalize_content_to_string(content: Any) -> str:
+    """
+    Normalizes LLM output content into a plain string.
+    LangChain AIMessage.content can be a string, a list of strings,
+    or a list of content part dicts (e.g. [{'type': 'text', 'text': '...'}]).
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                if item.get("type") == "text" and "text" in item:
+                    parts.append(item["text"])
+                elif "text" in item and item.get("type") != "thought":
+                    parts.append(item["text"])
+                elif "content" in item:
+                    parts.append(str(item["content"]))
+            elif hasattr(item, "text"):
+                parts.append(str(getattr(item, "text")))
+            else:
+                parts.append(str(item))
+        if parts:
+            return "".join(parts) if any("\n" in p for p in parts) else "\n\n".join(parts)
+        if content:
+            return "".join(str(item) for item in content)
+        return ""
+    return str(content) if content is not None else ""
+
+def extract_citations(answer: Any, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Parses inline citation markers [^1], [^2], etc. from the LLM output
     and builds structured citation metadata.
     """
+    if not isinstance(answer, str):
+        answer = normalize_content_to_string(answer)
+
     cited_indices = set(re.findall(r'\[\^(\d+)\]', answer))
     citations = []
 
@@ -86,7 +120,8 @@ async def synthesize_grounded_answer(query: str, chunks: List[Dict[str, Any]]) -
             loop = asyncio.get_event_loop()
             messages = [HumanMessage(content=prompt)]
             response = await loop.run_in_executor(None, llm.invoke, messages)
-            answer_text = response.content if hasattr(response, "content") else str(response)
+            raw_content = response.content if hasattr(response, "content") else str(response)
+            answer_text = normalize_content_to_string(raw_content)
         except Exception as e:
             logger.error(f"Google AI Studio Gemini invocation error: {e}", exc_info=True)
             answer_text = (

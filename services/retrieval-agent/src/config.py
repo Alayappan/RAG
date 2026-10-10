@@ -9,7 +9,8 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = os.getenv("POSTGRES_DB", "ragdb")
     
     GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")
-    EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "models/text-embedding-004")
+    EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "gemini-embedding-2")
+    EMBEDDING_DIMENSION: int = int(os.getenv("EMBEDDING_DIMENSION", "768"))
     
     DEFAULT_TOP_K: int = int(os.getenv("DEFAULT_TOP_K", "5"))
     DEFAULT_DENSE_WEIGHT: float = float(os.getenv("DEFAULT_DENSE_WEIGHT", "0.6"))

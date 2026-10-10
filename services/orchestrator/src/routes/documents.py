@@ -61,6 +61,53 @@ async def upload_document(file: UploadFile = File(...)):
         logger.error(f"Error processing uploaded document '{filename}': {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to process document: {str(e)}")
 
+@router.get("/{document_id}")
+async def get_document(document_id: str):
+    """Retrieves document details and all stored text chunks for source preview and inspection."""
+    if not db_pool.pool:
+        raise HTTPException(status_code=500, detail="Database connection pool unavailable")
+
+    async with db_pool.pool.acquire() as conn:
+        doc = await conn.fetchrow(
+            """
+            SELECT id, filename, file_type, file_size, total_pages, total_chunks, created_at
+            FROM documents
+            WHERE id = $1
+            """,
+            document_id
+        )
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        chunks = await conn.fetch(
+            """
+            SELECT id, chunk_index, page_number, content, metadata
+            FROM document_chunks
+            WHERE document_id = $1
+            ORDER BY chunk_index ASC
+            """,
+            document_id
+        )
+
+        return {
+            "id": doc["id"],
+            "filename": doc["filename"],
+            "file_type": doc["file_type"],
+            "file_size": doc["file_size"],
+            "total_pages": doc["total_pages"],
+            "total_chunks": doc["total_chunks"],
+            "created_at": doc["created_at"].isoformat() if doc["created_at"] else None,
+            "chunks": [
+                {
+                    "id": c["id"],
+                    "chunk_index": c["chunk_index"],
+                    "page_number": c["page_number"],
+                    "content": c["content"],
+                }
+                for c in chunks
+            ]
+        }
+
 @router.delete("/{document_id}")
 async def delete_document(document_id: str):
     """Deletes a document and all its associated vector chunks from PostgreSQL."""

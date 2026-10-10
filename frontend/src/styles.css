@@ -75,23 +75,37 @@ code, pre, .font-mono {
 .citation-badge {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 0.25rem;
   font-size: 0.725rem;
   font-weight: 600;
-  padding: 0.1rem 0.45rem;
-  margin: 0 0.2rem;
-  background-color: rgba(59, 130, 246, 0.2);
+  padding: 0.1rem 0.5rem;
+  margin: 0 0.25rem;
+  background-color: rgba(59, 130, 246, 0.18);
   color: #60a5fa;
-  border: 1px solid rgba(59, 130, 246, 0.4);
+  border: 1px solid rgba(59, 130, 246, 0.45);
   border-radius: 9999px;
   cursor: pointer;
-  transition: all 0.15s ease-in-out;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
   vertical-align: middle;
+  line-height: 1.2;
 }
 
 .citation-badge:hover {
-  background-color: #3b82f6;
+  background-color: #2563eb;
   color: #ffffff;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+  border-color: #93c5fd;
+  transform: translateY(-1.5px) scale(1.05);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.5);
+}
+
+.citation-badge .citation-icon {
+  width: 0.8rem;
+  height: 0.8rem;
+  opacity: 0.85;
+  transition: transform 0.15s ease;
+}
+
+.citation-badge:hover .citation-icon {
+  opacity: 1;
+  transform: scale(1.15);
 }

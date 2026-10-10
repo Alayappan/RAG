@@ -36,7 +36,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ragpassword}
       POSTGRES_DB: ${POSTGRES_DB:-ragdb}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}
-      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-models/text-embedding-004}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-gemini-embedding-2}
+      EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-768}
       DEFAULT_TOP_K: ${DEFAULT_TOP_K:-5}
       DEFAULT_DENSE_WEIGHT: ${DEFAULT_DENSE_WEIGHT:-0.6}
       DEFAULT_SPARSE_WEIGHT: ${DEFAULT_SPARSE_WEIGHT:-0.4}
@@ -84,7 +85,8 @@ services:
       RETRIEVAL_AGENT_URL: http://retrieval-agent:8001
       SYNTHESIS_AGENT_URL: http://synthesis-agent:8002
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}
-      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-models/text-embedding-004}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-gemini-embedding-2}
+      EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-768}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-1.5-flash}
     ports:
       - "8000:8000"
